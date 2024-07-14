@@ -1,9 +1,9 @@
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--datasetname', default="IP", help='IP,KSC,PU,SA,Houston')
-parser.add_argument('--numtrain', type=int, default=0.1, help='the number of train sets')
+parser.add_argument('--datasetname', default="IP", help='IP,PU,SA,HU13, WHU_LK')
+parser.add_argument('--numtrain', type=int, default=0.05, help='the number of train sets')
 parser.add_argument('--batchSize', type=int, default=128, help=' batchsize')
-parser.add_argument('--epochs', type=int, default=70, help='number of epochs to train for')
+parser.add_argument('--epochs', type=int, default=100, help='number of epochs to train for')
 parser.add_argument("--spectrumnum", type=int, default=36, help="number of spectal after PCA")
 parser.add_argument('--inputsize', type=int, default=9, help='size of input')
 parser.add_argument('--windowsize', type=int, default=3, help='size of windows')
