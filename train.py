@@ -15,6 +15,7 @@ import model
 from Utils import *
 from option import opt
 import time
+from operator import truediv
 from calflops import calculate_flops
 from sklearn.metrics import confusion_matrix, accuracy_score, classification_report, cohen_kappa_score
 
@@ -182,7 +183,7 @@ def train(train_loader, val_loader, epochs):
             data, target = data.to(device), target.to(device)
             # 正向传播 +　反向传播 + 优化
             # 通过输入得到预测的输出
-            print(data.shape)
+            
             outputs = net(data)
             # 计算损失函数
             loss = criterion(outputs, target)
@@ -250,8 +251,6 @@ def acc_reports(y_test, y_pred_test):
 
     target_names = ['Alfalfa', 'Corn-notill', 'Corn-mintill', 'Corn'
         , 'Grass-pasture', 'Grass-trees', 'Grass-pasture-mowed',
-                    'Hay-windrowed', 'Oats', 'Corn-mintill', 'Corn'
-        , 'Grass-pasture', 'Grass-trees', 'Grass-pasture-mowed',
                     'Hay-windrowed', 'Oats']
     classification = classification_report(y_test, y_pred_test, digits=4, target_names=target_names)
     oa = accuracy_score(y_test, y_pred_test)
@@ -275,7 +274,6 @@ if __name__ == '__main__':
     print("Alexnet FLOPs:%s  -- MACs:%s   -- Params:%s \n" %(flops, macs, params))
 
     toc1 = time.perf_counter()
-    torch.save(net.state_dict(), 'cls_params/SSFTTnet_params.pth')
     
     tic2 = time.perf_counter()
     y_pred_test, y_test = test(device, net, test_loader)
@@ -285,7 +283,7 @@ if __name__ == '__main__':
     classification = str(classification)
     Training_Time = toc1 - tic1
     Test_time = toc2 - tic2
-    file_name = "data/classification_report_IP "+str(test_ratio)+".txt"
+    file_name = "data/classification_report_IP "+str(opt.numtrain)+".txt"
     with open(file_name, 'w') as x_file:
         x_file.write('{} Training_Time (s)'.format(Training_Time))
         x_file.write('\n')
