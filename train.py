@@ -184,7 +184,7 @@ def train(netD, train_loader, test_loader):
 for index_iter in range(1):
     print('iter:', index_iter)
     netD = model.LSGAVIT(img_size=Wid,
-                         patch_size=3,
+                         patch_size=7,
                          in_chans=pca_components,
                          num_classes=num_class,
                          embed_dim=120,
