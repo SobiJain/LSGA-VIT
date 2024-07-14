@@ -14,6 +14,8 @@ from sklearn.metrics import confusion_matrix
 import model
 from Utils import *
 from option import opt
+import time
+from calflops import calculate_flops
 
 
 if opt.manualSeed is None:
@@ -85,13 +87,18 @@ nb_label = num_class
 print("label", nb_label)
 
 def train(netD, train_loader, test_loader):
+    
+    train_time = 0
+    test_time = 0
+    
     viz = Visdom()
     viz.close()
 
     start = torch.cuda.Event(enable_timing=True)
     end = torch.cuda.Event(enable_timing=True)
-
+    
     for epoch in range(1, opt.epochs + 1):
+        tic1 = time.time()
         netD.train()
         right = 0
         for i, datas in enumerate(train_loader):
@@ -109,11 +116,20 @@ def train(netD, train_loader, test_loader):
             optimizerD.step()
             right += correct
 
+        toc1 = time.time()
+        train_time = train_time + toc1-tic1
+
+        tic1 = time.time()
         if epoch % 5 == 0:
             print('[%d/%d][%d/%d]   D(x): %.4f, errD_real: %.4f,  Accuracy: %.4f / %.4f = %.4f'
                   % (epoch, opt.epochs, i, len(train_loader),
                      D_x, errD_real,
                      right, len(train_loader.dataset), 100. * right / len(train_loader.dataset)))
+        
+        toc1 = time.time()
+        train_time = train_time + toc1-tic1
+
+        tic2 = time.time()
         if epoch % 5 == 0:
             netD.eval()
             test_loss = 0
@@ -181,6 +197,12 @@ def train(netD, train_loader, test_loader):
 
             print('OA= %.5f AA= %.5f k= %.5f' % (acc, AA, k))
 
+        toc2 = time.time()
+        test_time = test_time + toc2 - tic2
+
+    print('Training time', train_time)
+    print('Test time', test_time)
+
 for index_iter in range(1):
     print('iter:', index_iter)
     netD = model.LSGAVIT(img_size=Wid,
@@ -206,3 +228,10 @@ for index_iter in range(1):
     c_label = Variable(c_label)
     optimizerD = optim.Adam(netD.parameters(), lr=opt.D_lr)
     train(netD, train_loader, test_loader)
+
+    input_shape = (128,36,9,9)
+    flops, macs, params = calculate_flops(model=netD, 
+                                          input_shape=input_shape,
+                                          output_as_string=True,
+                                          output_precision=4)
+    print("Alexnet FLOPs:%s   MACs:%s   Params:%s \n" %(flops, macs, params))
