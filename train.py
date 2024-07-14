@@ -1,6 +1,7 @@
 from __future__ import print_function
 import cv2
 import math
+import numpy as np
 from patchify import patchify
 from sklearn.model_selection import train_test_split
 from visdom import Visdom
@@ -10,12 +11,12 @@ import torch.backends.cudnn as cudnn
 import torch.optim as optim
 import torch.utils.data
 from torch.autograd import Variable
-from sklearn.metrics import confusion_matrix
 import model
 from Utils import *
 from option import opt
 import time
 from calflops import calculate_flops
+from sklearn.metrics import confusion_matrix, accuracy_score, classification_report, cohen_kappa_score
 
 
 if opt.manualSeed is None:
@@ -74,57 +75,48 @@ X_train_q = X_train_q.transpose(0, 3, 1, 2)
 Xtrain, Xtest, ytrain, ytest, idx1, idx2 = train_test_split(X_train_q, y_train_q, indices_1,
                                                             train_size=opt.numtrain, random_state=opt.random_seed,
                                                             stratify=y_train_q)
-Xtrain, Xtest, ytrain, ytest = splitTrainTestSet(X_pca, y_all, test_ratio)
-    Xval, Xtest, yval, ytest = splitTrainTestSet(Xtest, ytest, (1-(1-test_ratio)/test_ratio))
-    print('Xtrain shape: ', Xtrain.shape)
-    print('Xtest  shape: ', Xtest.shape)
-    print('Xval  shape: ', Xval.shape)
 
-    # 改变 Xtrain, Ytrain 的形状，以符合 keras 的要求
-    X = X_pca.reshape(-1, patch_size, patch_size, pca_components, 1)
-    Xtrain = Xtrain.reshape(-1, patch_size, patch_size, pca_components, 1)
-    Xtest = Xtest.reshape(-1, patch_size, patch_size, pca_components, 1)
-    Xval = Xval.reshape(-1, patch_size, patch_size, pca_components, 1)
-    print('before transpose: Xtrain shape: ', Xtrain.shape)
-    print('before transpose: Xtest  shape: ', Xtest.shape)
-    print('before transpose: Xval  shape: ', Xval.shape)
+print(Xtest.size)
+print(ytest.size)
 
-    # 为了适应 pytorch 结构，数据要做 transpose
-    X = X.transpose(0, 4, 3, 1, 2)
-    Xtrain = Xtrain.transpose(0, 4, 3, 1, 2)
-    Xtest = Xtest.transpose(0, 4, 3, 1, 2)
-    Xval = Xval.transpose(0, 4, 3, 1, 2)
-    print('after transpose: Xtrain shape: ', Xtrain.shape)
-    print('after transpose: Xtest  shape: ', Xtest.shape)
-    print('after transpose: Xval  shape: ', Xval.shape)
+print(Xtrain.size)
+print(ytrain.size)
 
-    # 创建train_loader和 test_loader
-    X = TestDS(X, y_all)
-    trainset = TrainDS(Xtrain, ytrain)
-    testset = TestDS(Xtest, ytest)
-    valset = TrainDS(Xval, yval)
-    train_loader = torch.utils.data.DataLoader(dataset=trainset,
-                                               batch_size=BATCH_SIZE_TRAIN,
-                                               shuffle=True,
-                                               num_workers=0,
-                                               )
-    test_loader = torch.utils.data.DataLoader(dataset=testset,
-                                               batch_size=BATCH_SIZE_TRAIN,
-                                               shuffle=False,
-                                               num_workers=0,
-                                              )
-    val_loader = torch.utils.data.DataLoader(dataset=valset,
-                                               batch_size=BATCH_SIZE_TRAIN,
-                                               shuffle=True,
-                                               num_workers=0,
-                                               )
-    all_data_loader = torch.utils.data.DataLoader(dataset=X,
-                                                batch_size=BATCH_SIZE_TRAIN,
-                                                shuffle=False,
-                                                num_workers=0,
-                                              )
+Xval, Xtest, yval, ytest= train_test_split(Xtest, ytest,
+                                                          train_size=opt.numtrain, random_state=opt.random_seed,
+                                                            stratify=ytest)                                                           
 
-    return train_loader, test_loader, val_loader, all_data_loader, y
+print('Xtrain shape: ', Xtrain.shape)
+print('Xtest  shape: ', Xtest.shape)
+print('Xval  shape: ', Xval.shape)
+
+BATCH_SIZE_TRAIN = opt.batchSize
+
+# 创建train_loader和 test_loader
+X = TestDS(X, y_train_q)
+trainset = TrainDS(Xtrain, ytrain)
+testset = TestDS(Xtest, ytest)
+valset = TrainDS(Xval, yval)
+train_loader = torch.utils.data.DataLoader(dataset=trainset,
+                                            batch_size=BATCH_SIZE_TRAIN,
+                                            shuffle=True,
+                                            num_workers=0,
+                                            )
+test_loader = torch.utils.data.DataLoader(dataset=testset,
+                                            batch_size=BATCH_SIZE_TRAIN,
+                                            shuffle=False,
+                                            num_workers=0,
+                                          )
+val_loader = torch.utils.data.DataLoader(dataset=valset,
+                                            batch_size=BATCH_SIZE_TRAIN,
+                                            shuffle=True,
+                                            num_workers=0,
+                                            )
+all_data_loader = torch.utils.data.DataLoader(dataset=X,
+                                            batch_size=BATCH_SIZE_TRAIN,
+                                            shuffle=False,
+                                            num_workers=0,
+                                          )
 
 """ Training dataset"""
 
@@ -190,6 +182,7 @@ def train(train_loader, val_loader, epochs):
             data, target = data.to(device), target.to(device)
             # 正向传播 +　反向传播 + 优化
             # 通过输入得到预测的输出
+            print(data.shape)
             outputs = net(data)
             # 计算损失函数
             loss = criterion(outputs, target)
@@ -270,7 +263,6 @@ def acc_reports(y_test, y_pred_test):
 
 if __name__ == '__main__':
 
-    train_loader, test_loader, val_loader, all_data_loader, y_all= create_data_loader()
     tic1 = time.perf_counter()
     net, device = train(train_loader, val_loader, epochs=200)
     # 只保存模型参数
