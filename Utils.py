@@ -16,17 +16,22 @@ def applyPCA(X, numComponents):
 def loadData(name):
     data_path = os.path.join(os.getcwd(), 'data')
     if name == 'IP':
-        data = sio.loadmat(os.path.join(data_path, 'Indian_pines_corrected.mat'))['indian_pines_corrected']
-        labels = sio.loadmat(os.path.join(data_path, 'Indian_pines_gt.mat'))['indian_pines_gt']
+        data = sio.loadmat(os.path.join(data_path, '/content/drive/MyDrive/Data/Indian_pines_corrected.mat'))['indian_pines_corrected']
+        labels = sio.loadmat(os.path.join(data_path, '/content/drive/MyDrive/Data/Indian_pines_gt.mat'))['indian_pines_gt']
     elif name == 'SA':
-        data = sio.loadmat(os.path.join(data_path, 'Salinas_corrected.mat'))['salinas_corrected']
-        labels = sio.loadmat(os.path.join(data_path, 'Salinas_gt.mat'))['salinas_gt']
+        data = sio.loadmat(os.path.join(data_path, '/content/drive/MyDrive/Data/Salinas_corrected.mat'))['salinas_corrected']
+        labels = sio.loadmat(os.path.join(data_path, '/content/drive/MyDrive/Data/Salinas_gt.mat'))['salinas_gt']
     elif name == 'PU':
-        data = sio.loadmat(os.path.join(data_path, 'PaviaU.mat'))['paviaU']
-        labels = sio.loadmat(os.path.join(data_path, 'PaviaU_gt.mat'))['paviaU_gt']
-    elif name == 'Houston':
-        data = sio.loadmat(os.path.join(data_path, 'Houston.mat'))['Houston']
-        labels = sio.loadmat(os.path.join(data_path, 'Houston_gt.mat'))['gt']
+        data = sio.loadmat(os.path.join(data_path, '/content/drive/MyDrive/Data/PaviaU.mat'))['paviaU']
+        labels = sio.loadmat(os.path.join(data_path, '/content/drive/MyDrive/Data/PaviaU_gt.mat'))['paviaU_gt']
+    elif name == 'HU13':
+        data = sio.loadmat(os.path.join(data_path, '/content/drive/MyDrive/Data/Houston13.mat'))['ori_data']
+        labels = sio.loadmat(os.path.join(data_path, '/content/drive/MyDrive/Data/Houston13_7gt.mat'))['map']
+    elif name == 'WHU_LK':
+        uHouston = sio.loadmat('/content/drive/MyDrive/Data/WHU data/WHU-Hi-LongKou/WHU_Hi_LongKou.mat')
+        gt_uHouston = sio.loadmat('/content/drive/MyDrive/Data/WHU data/WHU-Hi-LongKou/WHU_Hi_LongKou_gt.mat')
+        data = uHouston['WHU_Hi_LongKou']
+        labels = gt_uHouston['WHU_Hi_LongKou_gt']
     return data, labels
 
 class TrainDS(torch.utils.data.Dataset):
