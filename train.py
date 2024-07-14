@@ -74,164 +74,241 @@ X_train_q = X_train_q.transpose(0, 3, 1, 2)
 Xtrain, Xtest, ytrain, ytest, idx1, idx2 = train_test_split(X_train_q, y_train_q, indices_1,
                                                             train_size=opt.numtrain, random_state=opt.random_seed,
                                                             stratify=y_train_q)
-print('after Xtrain shape:', Xtrain.shape)
-print('after Xtest shape:', Xtest.shape)
+Xtrain, Xtest, ytrain, ytest = splitTrainTestSet(X_pca, y_all, test_ratio)
+    Xval, Xtest, yval, ytest = splitTrainTestSet(Xtest, ytest, (1-(1-test_ratio)/test_ratio))
+    print('Xtrain shape: ', Xtrain.shape)
+    print('Xtest  shape: ', Xtest.shape)
+    print('Xval  shape: ', Xval.shape)
 
-trainset = TrainDS(Xtrain, ytrain)
-testset = TestDS(Xtest, ytest)
-train_loader = torch.utils.data.DataLoader(dataset=trainset, batch_size=opt.batchSize, shuffle=True, num_workers=0)
-test_loader = torch.utils.data.DataLoader(dataset=testset, batch_size=opt.batchSize, shuffle=False, num_workers=0)
-nz = int(opt.nz)
-nc = pca_components
-nb_label = num_class
-print("label", nb_label)
+    # 改变 Xtrain, Ytrain 的形状，以符合 keras 的要求
+    X = X_pca.reshape(-1, patch_size, patch_size, pca_components, 1)
+    Xtrain = Xtrain.reshape(-1, patch_size, patch_size, pca_components, 1)
+    Xtest = Xtest.reshape(-1, patch_size, patch_size, pca_components, 1)
+    Xval = Xval.reshape(-1, patch_size, patch_size, pca_components, 1)
+    print('before transpose: Xtrain shape: ', Xtrain.shape)
+    print('before transpose: Xtest  shape: ', Xtest.shape)
+    print('before transpose: Xval  shape: ', Xval.shape)
 
-def train(netD, train_loader, test_loader):
-    
-    train_time = 0
-    test_time = 0
-    
-    viz = Visdom()
-    viz.close()
+    # 为了适应 pytorch 结构，数据要做 transpose
+    X = X.transpose(0, 4, 3, 1, 2)
+    Xtrain = Xtrain.transpose(0, 4, 3, 1, 2)
+    Xtest = Xtest.transpose(0, 4, 3, 1, 2)
+    Xval = Xval.transpose(0, 4, 3, 1, 2)
+    print('after transpose: Xtrain shape: ', Xtrain.shape)
+    print('after transpose: Xtest  shape: ', Xtest.shape)
+    print('after transpose: Xval  shape: ', Xval.shape)
 
-    start = torch.cuda.Event(enable_timing=True)
-    end = torch.cuda.Event(enable_timing=True)
-    
-    for epoch in range(1, opt.epochs + 1):
-        tic1 = time.time()
-        netD.train()
-        right = 0
-        for i, datas in enumerate(train_loader):
-            netD.zero_grad()
-            img, label = datas
-            batch_size = img.size(0)
-            input.resize_(img.size()).copy_(img)
-            c_label.resize_(batch_size).copy_(label)
-            c_output = netD(input)
-            c_errD_real = c_criterion(c_output, c_label)
-            errD_real = c_errD_real
-            errD_real.backward()
-            D_x = c_output.data.mean()
-            correct, length = test(c_output, c_label)
-            optimizerD.step()
-            right += correct
+    # 创建train_loader和 test_loader
+    X = TestDS(X, y_all)
+    trainset = TrainDS(Xtrain, ytrain)
+    testset = TestDS(Xtest, ytest)
+    valset = TrainDS(Xval, yval)
+    train_loader = torch.utils.data.DataLoader(dataset=trainset,
+                                               batch_size=BATCH_SIZE_TRAIN,
+                                               shuffle=True,
+                                               num_workers=0,
+                                               )
+    test_loader = torch.utils.data.DataLoader(dataset=testset,
+                                               batch_size=BATCH_SIZE_TRAIN,
+                                               shuffle=False,
+                                               num_workers=0,
+                                              )
+    val_loader = torch.utils.data.DataLoader(dataset=valset,
+                                               batch_size=BATCH_SIZE_TRAIN,
+                                               shuffle=True,
+                                               num_workers=0,
+                                               )
+    all_data_loader = torch.utils.data.DataLoader(dataset=X,
+                                                batch_size=BATCH_SIZE_TRAIN,
+                                                shuffle=False,
+                                                num_workers=0,
+                                              )
 
-        toc1 = time.time()
-        train_time = train_time + toc1-tic1
+    return train_loader, test_loader, val_loader, all_data_loader, y
 
-        tic1 = time.time()
-        if epoch % 5 == 0:
-            print('[%d/%d][%d/%d]   D(x): %.4f, errD_real: %.4f,  Accuracy: %.4f / %.4f = %.4f'
-                  % (epoch, opt.epochs, i, len(train_loader),
-                     D_x, errD_real,
-                     right, len(train_loader.dataset), 100. * right / len(train_loader.dataset)))
-        
-        toc1 = time.time()
-        train_time = train_time + toc1-tic1
+""" Training dataset"""
 
-        tic2 = time.time()
-        if epoch % 5 == 0:
-            netD.eval()
-            test_loss = 0
-            right = 0
-            all_Label = []
-            all_target = []
-            for data, target in test_loader:
-                indx_target = target.clone()
-                if opt.cuda:
-                    data, target = data.cuda(), target.cuda()
-                with torch.no_grad():
-                    data, target = Variable(data), Variable(target)
+class TrainDS(torch.utils.data.Dataset):
 
-                start.record(stream=torch.cuda.current_stream())
-                output = netD(data)
-                end.record(stream=torch.cuda.current_stream())
-                end.synchronize()
-                test_loss += c_criterion(output, target).item()
-                pred = output.max(1)[1]  # get the index of the max log-probability
-                all_Label.extend(pred)
-                all_target.extend(target)
-                right += pred.cpu().eq(indx_target).sum()
+    def __init__(self, Xtrain, ytrain):
 
-            test_loss = test_loss / len(test_loader)  # average over number of mini-batch
-            acc = float(100. * float(right)) / float(len(test_loader.dataset))
-            print('\tTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
-                test_loss, right, len(test_loader.dataset), acc))
+        self.len = Xtrain.shape[0]
+        self.x_data = torch.FloatTensor(Xtrain)
+        self.y_data = torch.LongTensor(ytrain)
 
-            AAA = torch.stack(all_target).data.cpu().numpy()
-            BBB = torch.stack(all_Label).data.cpu().numpy()
-            C = confusion_matrix(AAA, BBB)
-            C = C[:num_class, :num_class]
-            k = kappa(C, np.shape(C)[0])
-            AA_ACC = np.diag(C) / np.sum(C, 1)
-            AA = np.mean(AA_ACC, 0)
+    def __getitem__(self, index):
 
-            if math.isnan(acc):
-                acc = 0
-            viz.line(
-                X=np.array([epoch]),
-                Y=np.array([acc]),
-                win='window1',
-                update='append',
-                opts=dict(legend=["acc"],
-                          showlegend=True,
-                          markers=False,
-                          title='precision',
-                          xlabel='epoch',
-                          ylabel='Volume',
-                          fillarea=False),
-            )
-            viz.line(
-                X=np.column_stack((epoch, epoch)),
-                Y=np.column_stack((D_x.data.cpu().numpy(), (errD_real).data.cpu().numpy())),
-                win='window2',
-                update='append',
-                opts=dict(legend=["D(X)", "errD_real"],
-                          showlegend=True,
-                          markers=False,
-                          title='loss',
-                          xlabel='epoch',
-                          ylabel='Volume',
-                          fillarea=False),
-            )
+        # 根据索引返回数据和对应的标签
+        return self.x_data[index], self.y_data[index]
+    def __len__(self):
 
-            print('OA= %.5f AA= %.5f k= %.5f' % (acc, AA, k))
+        # 返回文件数据的数目
+        return self.len
 
-        toc2 = time.time()
-        test_time = test_time + toc2 - tic2
+""" Testing dataset"""
 
-    print('Training time', train_time)
-    print('Test time', test_time)
+class TestDS(torch.utils.data.Dataset):
 
-for index_iter in range(1):
-    print('iter:', index_iter)
-    netD = model.LSGAVIT(img_size=Wid,
+    def __init__(self, Xtest, ytest):
+
+        self.len = Xtest.shape[0]
+        self.x_data = torch.FloatTensor(Xtest)
+        self.y_data = torch.LongTensor(ytest)
+
+    def __getitem__(self, index):
+
+        # 根据索引返回数据和对应的标签
+        return self.x_data[index], self.y_data[index]
+
+    def __len__(self):
+
+        # 返回文件数据的数目
+        return self.len
+
+def train(train_loader, val_loader, epochs):
+
+    # 使用GPU训练，可以在菜单 "代码执行工具" -> "更改运行时类型" 里进行设置
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    # 网络放到GPU上
+    net = model.LSGAVIT(img_size=Wid,
                          patch_size=7,
                          in_chans=pca_components,
                          num_classes=num_class,
                          embed_dim=120,
                          depths=[2],
                          num_heads=[12, 12, 12, 24],
-                         )
-    if opt.netD != '':
-        netD.load_state_dict(torch.load(opt.netD))
-    print(netD)
-    c_criterion = nn.CrossEntropyLoss()
-    input = torch.FloatTensor(opt.batchSize, nc, opt.inputsize, opt.inputsize)
-    c_label = torch.LongTensor(opt.batchSize)
-    if opt.cuda:
-        netD.cuda()
-        c_criterion.cuda()
-        input = input.cuda()
-        c_label = c_label.cuda()
-    input = Variable(input)
-    c_label = Variable(c_label)
-    optimizerD = optim.Adam(netD.parameters(), lr=opt.D_lr)
-    train(netD, train_loader, test_loader)
+                         ).to(device)
+    # 交叉熵损失函数
+    criterion = nn.CrossEntropyLoss()
+    # 初始化优化器
+    optimizer = optim.Adam(net.parameters(), lr=0.0005)
+    # 开始训练
+    total_loss = 0
+    for epoch in range(epochs):
+        net.train()
+        for i, (data, target) in enumerate(train_loader):
+            data, target = data.to(device), target.to(device)
+            # 正向传播 +　反向传播 + 优化
+            # 通过输入得到预测的输出
+            outputs = net(data)
+            # 计算损失函数
+            loss = criterion(outputs, target)
+            # 优化器梯度归零
+            optimizer.zero_grad()
+            # 反向传播
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+        print('[Epoch: %d]   [loss avg: %.4f]   [current loss: %.4f]' % (epoch + 1,
+                                                                         total_loss / (epoch + 1),
+                                                                         loss.item()))
+        val_acc_list = []
+        val_epoch_list = []
+        val_num = val_loader.dataset.__len__()
+        ## valuation
+        if (epoch+1)%4 == 0 or (epoch+1)==epochs:
+            val_acc =0
+            net.eval()
+            for batch_idx, (data, target) in enumerate(val_loader):
+                data,target = data.to(device),target.to(device)
+                out = net(data)
+                target = target - 1  ## class 0 in out is class 1 in target
+                _,pred = torch.max(out,dim=1)
+                val_acc += (pred == target).sum().item()
+            val_acc_list.append(val_acc/val_num)
+            val_epoch_list.append(epoch)
+            print(f"epoch {epoch}/{epochs}  val_acc:{val_acc_list[-1]}")
+            save_name = os.path.join('/', f"epoch_{epoch}_acc_{val_acc_list[-1]:.4f}.pth")
+            torch.save(net.state_dict(),save_name)
 
-    input_shape = (128,36,9,9)
-    flops, macs, params = calculate_flops(model=netD, 
-                                          input_shape=input_shape,
-                                          output_as_string=True,
-                                          output_precision=4)
-    print("Alexnet FLOPs:%s   MACs:%s   Params:%s \n" %(flops, macs, params))
+    print('Finished Training')
+
+    return net, device
+
+def test(device, net, test_loader):
+    count = 0
+    # 模型测试
+    net.eval()
+    y_pred_test = 0
+    y_test = 0
+    for inputs, labels in test_loader:
+        inputs = inputs.to(device)
+        outputs = net(inputs)
+        outputs = np.argmax(outputs.detach().cpu().numpy(), axis=1)
+        if count == 0:
+            y_pred_test = outputs
+            y_test = labels
+            count = 1
+        else:
+            y_pred_test = np.concatenate((y_pred_test, outputs))
+            y_test = np.concatenate((y_test, labels))
+
+    return y_pred_test, y_test
+
+def AA_andEachClassAccuracy(confusion_matrix):
+
+    list_diag = np.diag(confusion_matrix)
+    list_raw_sum = np.sum(confusion_matrix, axis=1)
+    each_acc = np.nan_to_num(truediv(list_diag, list_raw_sum))
+    average_acc = np.mean(each_acc)
+    return each_acc, average_acc
+
+def acc_reports(y_test, y_pred_test):
+
+    target_names = ['Alfalfa', 'Corn-notill', 'Corn-mintill', 'Corn'
+        , 'Grass-pasture', 'Grass-trees', 'Grass-pasture-mowed',
+                    'Hay-windrowed', 'Oats', 'Corn-mintill', 'Corn'
+        , 'Grass-pasture', 'Grass-trees', 'Grass-pasture-mowed',
+                    'Hay-windrowed', 'Oats']
+    classification = classification_report(y_test, y_pred_test, digits=4, target_names=target_names)
+    oa = accuracy_score(y_test, y_pred_test)
+    confusion = confusion_matrix(y_test, y_pred_test)
+    each_acc, aa = AA_andEachClassAccuracy(confusion)
+    kappa = cohen_kappa_score(y_test, y_pred_test)
+
+    return classification, oa*100, confusion, each_acc*100, aa*100, kappa*100
+
+if __name__ == '__main__':
+
+    train_loader, test_loader, val_loader, all_data_loader, y_all= create_data_loader()
+    tic1 = time.perf_counter()
+    net, device = train(train_loader, val_loader, epochs=200)
+    # 只保存模型参数
+    print("_______________________________________")
+    input_shape = (128, 36, 7, 7)
+    flops, macs, params = calculate_flops(model=net, 
+                                        input_shape=input_shape,
+                                        output_as_string=True,
+                                        output_precision=4)
+    print("Alexnet FLOPs:%s  -- MACs:%s   -- Params:%s \n" %(flops, macs, params))
+
+    toc1 = time.perf_counter()
+    torch.save(net.state_dict(), 'cls_params/SSFTTnet_params.pth')
+    
+    tic2 = time.perf_counter()
+    y_pred_test, y_test = test(device, net, test_loader)
+    toc2 = time.perf_counter()
+    # 评价指标
+    classification, oa, confusion, each_acc, aa, kappa = acc_reports(y_test, y_pred_test)
+    classification = str(classification)
+    Training_Time = toc1 - tic1
+    Test_time = toc2 - tic2
+    file_name = "data/classification_report_IP "+str(test_ratio)+".txt"
+    with open(file_name, 'w') as x_file:
+        x_file.write('{} Training_Time (s)'.format(Training_Time))
+        x_file.write('\n')
+        x_file.write('{} Test_time (s)'.format(Test_time))
+        x_file.write('\n')
+        x_file.write('{} Kappa accuracy (%)'.format(kappa))
+        x_file.write('\n')
+        x_file.write('{} Overall accuracy (%)'.format(oa))
+        x_file.write('\n')
+        x_file.write('{} Average accuracy (%)'.format(aa))
+        x_file.write('\n')
+        x_file.write('{} Each accuracy (%)'.format(each_acc))
+        x_file.write('\n')
+        x_file.write('{}'.format(classification))
+        x_file.write('\n')
+        x_file.write('{}'.format(confusion))
+
+    # get_cls_map.get_cls_map(net, device, all_data_loade
