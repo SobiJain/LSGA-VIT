@@ -5,6 +5,7 @@ import scipy.io as sio
 import torch
 import torch.utils.data
 from sklearn.decomposition import PCA
+import mat73
 
 def applyPCA(X, numComponents):
     newX = np.reshape(X, (-1, X.shape[2]))
@@ -25,8 +26,8 @@ def loadData(name):
         data = sio.loadmat(os.path.join(data_path, '/content/drive/MyDrive/Data/PaviaU.mat'))['paviaU']
         labels = sio.loadmat(os.path.join(data_path, '/content/drive/MyDrive/Data/PaviaU_gt.mat'))['paviaU_gt']
     elif name == 'HU13':
-        data = sio.loadmat(os.path.join(data_path, '/content/drive/MyDrive/Data/Houston13.mat'))['ori_data']
-        labels = sio.loadmat(os.path.join(data_path, '/content/drive/MyDrive/Data/Houston13_7gt.mat'))['map']
+        data = mat73.loadmat(os.path.join(data_path, '/content/drive/MyDrive/Data/Houston13.mat'))['ori_data']
+        labels = mat73.loadmat(os.path.join(data_path, '/content/drive/MyDrive/Data/Houston13_7gt.mat'))['map']
     elif name == 'WHU_LK':
         uHouston = sio.loadmat('/content/drive/MyDrive/Data/WHU data/WHU-Hi-LongKou/WHU_Hi_LongKou.mat')
         gt_uHouston = sio.loadmat('/content/drive/MyDrive/Data/WHU data/WHU-Hi-LongKou/WHU_Hi_LongKou_gt.mat')
